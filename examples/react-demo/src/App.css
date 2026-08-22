@@ -1,0 +1,122 @@
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: system-ui, -apple-system, sans-serif;
+  color: #111827;
+  background: #f9fafb;
+}
+
+.app {
+  display: flex;
+  min-height: 100vh;
+}
+
+.sidebar {
+  width: 220px;
+  background: #111827;
+  color: #fff;
+  padding: 20px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.sidebar h2 {
+  font-size: 16px;
+  margin: 0 0 12px;
+}
+
+.nav-btn {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 10px 12px;
+  background: #1f2937;
+  color: #fff;
+  border: 1px solid #374151;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.nav-btn:hover {
+  background: #374151;
+}
+
+.content {
+  flex: 1;
+  padding: 40px;
+  max-width: 640px;
+}
+
+form {
+  margin-top: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-width: 320px;
+}
+
+label {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+input {
+  padding: 8px 10px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 14px;
+}
+
+form button {
+  align-self: flex-start;
+  padding: 8px 16px;
+  background: #2563eb;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.status-bar {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  background: #fff;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  padding: 8px 14px;
+  font-size: 13px;
+  font-family: ui-monospace, monospace;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.demo-controls {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  display: flex;
+  gap: 10px;
+}
+
+.demo-controls button {
+  padding: 10px 18px;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.start-tour {
+  background: #16a34a;
+}
+
+.stop-tour {
+  background: #dc2626;
+}

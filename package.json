@@ -11,6 +11,16 @@
       "import": "./dist/esm/index.js",
       "require": "./dist/cjs/index.js",
       "types": "./dist/esm/index.d.ts"
+    },
+    "./ai-copy": {
+      "import": "./dist/esm/ai-copy.js",
+      "require": "./dist/cjs/ai-copy.js",
+      "types": "./dist/esm/ai-copy.d.ts"
+    },
+    "./react": {
+      "import": "./dist/esm/react/useTour.js",
+      "require": "./dist/cjs/react/useTour.js",
+      "types": "./dist/esm/react/useTour.d.ts"
     }
   },
   "files": [
@@ -23,7 +33,17 @@
     "typecheck": "tsc --noEmit"
   },
   "license": "MIT",
+  "peerDependencies": {
+    "react": ">=17.0.0"
+  },
+  "peerDependenciesMeta": {
+    "react": {
+      "optional": true
+    }
+  },
   "devDependencies": {
+    "@types/react": "^19.2.18",
+    "react": "^19.2.8",
     "typescript": "^5.5.4"
   }
 }

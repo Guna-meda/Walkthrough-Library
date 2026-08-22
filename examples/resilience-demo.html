@@ -1,0 +1,273 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>tour-lib resilience demo</title>
+<link rel="stylesheet" href="../src/style.css" />
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: system-ui, -apple-system, sans-serif;
+    color: #111827;
+    background: #f9fafb;
+  }
+  .app {
+    display: flex;
+    min-height: 100vh;
+  }
+  .sidebar {
+    width: 220px;
+    background: #111827;
+    color: #fff;
+    padding: 20px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .sidebar h2 {
+    font-size: 16px;
+    margin: 0 0 12px;
+  }
+  .nav-btn {
+    display: block;
+    width: 100%;
+    text-align: left;
+    padding: 10px 12px;
+    background: #1f2937;
+    color: #fff;
+    border: 1px solid #374151;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 14px;
+  }
+  .nav-btn:hover {
+    background: #374151;
+  }
+  .content {
+    flex: 1;
+    padding: 40px;
+    max-width: 560px;
+  }
+  .hint {
+    background: #eff6ff;
+    border: 1px solid #bfdbfe;
+    border-radius: 8px;
+    padding: 12px 16px;
+    font-size: 13px;
+    color: #1e3a8a;
+    line-height: 1.6;
+  }
+  .hint ol {
+    margin: 8px 0 0;
+    padding-left: 20px;
+  }
+  form {
+    margin-top: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    max-width: 320px;
+  }
+  label {
+    font-size: 13px;
+    font-weight: 600;
+  }
+  input {
+    padding: 8px 10px;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    font-size: 14px;
+  }
+  form button {
+    align-self: flex-start;
+    padding: 8px 16px;
+    background: #2563eb;
+    color: #fff;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 14px;
+  }
+  .results-panel {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    width: 320px;
+    max-height: 60vh;
+    overflow-y: auto;
+    background: #fff;
+    border: 1px solid #d1d5db;
+    border-radius: 8px;
+    padding: 12px 14px;
+    font-size: 12px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  }
+  .results-panel h3 {
+    margin: 0 0 8px;
+    font-size: 13px;
+  }
+  .results-panel ul {
+    margin: 0;
+    padding-left: 0;
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .results-panel li {
+    font-family: ui-monospace, monospace;
+    line-height: 1.4;
+    word-break: break-word;
+  }
+  .demo-controls {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    display: flex;
+    gap: 10px;
+  }
+  .demo-controls button {
+    padding: 10px 18px;
+    color: #fff;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 14px;
+  }
+  #start-test {
+    background: #16a34a;
+  }
+  #show-log {
+    background: #4b5563;
+  }
+</style>
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <h2>MyApp</h2>
+      <button class="nav-btn" data-testid="create-project-btn" aria-label="Create new project">+ New Project</button>
+      <button class="nav-btn" data-testid="settings-btn" aria-label="Open settings">Settings</button>
+    </aside>
+    <main class="content">
+      <h1>Dashboard</h1>
+      <div class="hint">
+        This flow's Step JSON deliberately uses stale selectors to exercise the Step 4
+        matcher upgrade:
+        <ol>
+          <li><strong>Step 1</strong> — testId/ariaLabel broken, exact text still correct.</li>
+          <li><strong>Step 2</strong> — testId/ariaLabel/cssPath broken, text has a typo ("Settngs") — needs fuzzy match.</li>
+          <li><strong>Step 3</strong> — everything broken, text unrelated — should stay unresolved and get skipped.</li>
+          <li><strong>Step 4</strong> — a normal, fully-valid step — proves the player recovers after the skip.</li>
+        </ol>
+      </div>
+      <form id="signup-form">
+        <label for="email">Email</label>
+        <input id="email" data-testid="email-input" type="email" name="email" placeholder="you@example.com" />
+        <button type="submit">Submit</button>
+      </form>
+    </main>
+  </div>
+
+  <div class="results-panel">
+    <h3>Test log</h3>
+    <ul id="results-list"></ul>
+  </div>
+
+  <div class="demo-controls">
+    <button id="show-log" type="button">Show Match Log</button>
+    <button id="start-test" type="button">Start Resilience Test</button>
+  </div>
+
+  <script type="module">
+    import { TourPlayer } from "../dist/esm/index.js";
+
+    const flow = {
+      id: "resilience-test",
+      title: "Resilience test flow",
+      version: 1,
+      steps: [
+        {
+          id: "step-1",
+          selectors: {
+            testId: "old-create-project-btn",
+            ariaLabel: "Old create project label",
+            text: "+ New Project"
+          },
+          title: "1. Exact text fallback",
+          text: "testId/ariaLabel are broken (simulated UI change) — resolved via exact text match.",
+          placement: "right"
+        },
+        {
+          id: "step-2",
+          selectors: {
+            testId: "old-settings-btn",
+            ariaLabel: "Old settings label",
+            cssPath: "#does-not-exist-anymore",
+            text: "Settngs"
+          },
+          title: "2. Fuzzy text fallback",
+          text: "testId/ariaLabel/cssPath are all broken and the recorded text has a typo — resolved via fuzzy text match.",
+          placement: "right"
+        },
+        {
+          id: "step-3",
+          selectors: {
+            testId: "old-submit-btn",
+            ariaLabel: "Old submit label",
+            cssPath: "#does-not-exist-either",
+            text: "Totally different unrelated wording"
+          },
+          title: "3. Unresolved on purpose",
+          text: "Every selector is broken and the text is unrelated — this step cannot resolve and will be skipped.",
+          placement: "top"
+        },
+        {
+          id: "step-4",
+          selectors: {
+            testId: "email-input"
+          },
+          title: "4. Still works after a skip",
+          text: "A normal, fully-valid step — proves the player recovers gracefully after skipping step 3.",
+          placement: "bottom"
+        }
+      ]
+    };
+
+    const player = new TourPlayer();
+    const resultsList = document.getElementById("results-list");
+
+    function logResult(text) {
+      const li = document.createElement("li");
+      li.textContent = text;
+      resultsList.appendChild(li);
+      li.scrollIntoView({ block: "nearest" });
+    }
+
+    document.getElementById("start-test").addEventListener("click", () => {
+      resultsList.innerHTML = "";
+      logResult("Tour started.");
+      player.start(flow, {
+        onStepUnresolved: (step) => {
+          logResult(`⚠ onStepUnresolved fired for "${step.id}" — skipped.`);
+        }
+      });
+    });
+
+    document.getElementById("show-log").addEventListener("click", () => {
+      const log = player.getMatchLog();
+      if (log.length === 0) {
+        logResult("Match log is empty — run the test first.");
+        return;
+      }
+      logResult("Match log: " + log.map((e) => `${e.stepId} → ${e.strategy}`).join(", "));
+    });
+
+    // Prevent the demo form from actually navigating away when Submit is clicked.
+    document.getElementById("signup-form").addEventListener("submit", (ev) => {
+      ev.preventDefault();
+    });
+  </script>
+</body>
+</html>

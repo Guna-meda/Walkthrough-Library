@@ -2,6 +2,19 @@ import type { Flow, Step, StepSelectors } from "./types.js";
 
 export interface TourPlayerOptions {
   onStepUnresolved?: (step: Step) => void;
+  /** Fires with the newly-active step whenever one renders, and with null when the
+   * tour becomes inactive (stopped, skipped, or finished). Optional — the player
+   * works the same with or without it; this only exists so a host UI (e.g. the React
+   * wrapper) can mirror "which step is active" without polling. */
+  onStepChange?: (step: Step | null) => void;
+}
+
+/** Which selector strategy resolved a step's target element (see docs/SPEC.md). */
+export type MatchStrategy = "testId" | "ariaLabel" | "text" | "cssPath" | "fuzzyText";
+
+export interface MatchLogEntry {
+  stepId: string;
+  strategy: MatchStrategy;
 }
 
 const SPOTLIGHT_CLASS = "tourlib-spotlight";
@@ -14,6 +27,10 @@ const VIEWPORT_MARGIN = 8;
 // overrides that variable, the fade-out just finishes slightly early/late —
 // harmless, since removal is also guarded by the transitionend listener.
 const TRANSITION_FALLBACK_MS = 220;
+// Minimum Levenshtein-ratio similarity (0-1) a candidate needs to win the fuzzy
+// text fallback. Chosen to catch typos/minor rewording without guessing between
+// genuinely different labels.
+const FUZZY_TEXT_THRESHOLD = 0.6;
 
 export class TourPlayer {
   private flow: Flow | null = null;
@@ -25,12 +42,16 @@ export class TourPlayer {
   private currentTarget: Element | null = null;
   private currentClickHandler: ((ev: Event) => void) | null = null;
   private repositionHandler: (() => void) | null = null;
+  private matchLog: MatchLogEntry[] = [];
+  private onStepChange: ((step: Step | null) => void) | undefined;
 
   start(flow: Flow, options: TourPlayerOptions = {}): void {
     this.stop();
     this.flow = flow;
     this.onStepUnresolved = options.onStepUnresolved;
+    this.onStepChange = options.onStepChange;
     this.currentIndex = -1;
+    this.matchLog = [];
     this.advance(0);
   }
 
@@ -40,10 +61,19 @@ export class TourPlayer {
   }
 
   stop(): void {
+    const wasActive = this.flow !== null && this.currentIndex >= 0;
     this.teardownStepUI();
     this.flow = null;
     this.currentIndex = -1;
     this.onStepUnresolved = undefined;
+    const onStepChange = this.onStepChange;
+    this.onStepChange = undefined;
+    if (wasActive) onStepChange?.(null);
+  }
+
+  /** Which selector strategy resolved each step played so far, in play order. */
+  getMatchLog(): MatchLogEntry[] {
+    return this.matchLog.slice();
   }
 
   /** Walks forward from startIndex, skipping any step whose target can't be resolved. */
@@ -52,10 +82,12 @@ export class TourPlayer {
     let index = startIndex;
     while (index < this.flow.steps.length) {
       const step = this.flow.steps[index];
-      const target = this.resolveTarget(step.selectors);
-      if (target) {
+      const match = this.resolveTarget(step.selectors);
+      if (match) {
         this.currentIndex = index;
-        this.renderStep(step, target);
+        this.matchLog.push({ stepId: step.id, strategy: match.strategy });
+        this.renderStep(step, match.element);
+        this.onStepChange?.(step);
         return;
       }
       this.onStepUnresolved?.(step);
@@ -204,27 +236,35 @@ export class TourPlayer {
     setTimeout(remove, TRANSITION_FALLBACK_MS);
   }
 
-  /** Tries selectors.testId -> ariaLabel -> text -> cssPath, in that order (see docs/SPEC.md). */
-  private resolveTarget(selectors: StepSelectors): Element | null {
+  /** Tries selectors.testId -> ariaLabel -> text -> cssPath -> fuzzy text, in that
+   * order (see docs/SPEC.md). Fuzzy text is a last resort: it only runs once the four
+   * exact strategies have all failed, and only ever returns a single, unambiguous
+   * best-scoring candidate above FUZZY_TEXT_THRESHOLD — ties or no candidate clearing
+   * the threshold both count as unresolved. */
+  private resolveTarget(selectors: StepSelectors): { element: Element; strategy: MatchStrategy } | null {
     if (selectors.testId) {
       const el = matchUniqueBySelector(`[data-testid="${cssAttrEscape(selectors.testId)}"]`);
-      if (el) return el;
+      if (el) return { element: el, strategy: "testId" };
     }
     if (selectors.ariaLabel) {
       const el = matchUniqueBySelector(`[aria-label="${cssAttrEscape(selectors.ariaLabel)}"]`);
-      if (el) return el;
+      if (el) return { element: el, strategy: "ariaLabel" };
     }
     if (selectors.text) {
       const el = matchUniqueByText(selectors.text);
-      if (el) return el;
+      if (el) return { element: el, strategy: "text" };
     }
     if (selectors.cssPath) {
       try {
         const el = document.querySelector(selectors.cssPath);
-        if (el && !isTourUiElement(el)) return el;
+        if (el && !isTourUiElement(el)) return { element: el, strategy: "cssPath" };
       } catch {
         // invalid selector string — fall through to unresolved
       }
+    }
+    if (selectors.text) {
+      const el = matchFuzzyByText(selectors.text);
+      if (el) return { element: el, strategy: "fuzzyText" };
     }
     return null;
   }
@@ -259,6 +299,71 @@ function matchUniqueByText(text: string): Element | null {
     (el) => !matches.some((other) => other !== el && el.contains(other))
   );
   return innermost.length === 1 ? innermost[0] : null;
+}
+
+/** Finds the single best-scoring element for a fuzzy text match, or null if no
+ * candidate clears FUZZY_TEXT_THRESHOLD or the top score is tied between candidates. */
+function matchFuzzyByText(text: string): Element | null {
+  const all = Array.from(document.body.querySelectorAll<HTMLElement>("*"));
+  const candidates = all.filter(
+    (el) => el.textContent !== null && el.textContent.trim().length > 0 && isVisible(el) && !isTourUiElement(el)
+  );
+  // Same innermost-only dedup as exact text matching, so a wrapping container
+  // doesn't compete against (and shadow) its own descendant's better score.
+  const innermost = candidates.filter(
+    (el) => !candidates.some((other) => other !== el && el.contains(other))
+  );
+
+  let bestScore = -1;
+  let bestEl: HTMLElement | null = null;
+  let tied = false;
+
+  for (const el of innermost) {
+    const score = textSimilarity(el.textContent!.trim(), text);
+    if (score > bestScore) {
+      bestScore = score;
+      bestEl = el;
+      tied = false;
+    } else if (score === bestScore) {
+      tied = true;
+    }
+  }
+
+  if (bestEl && bestScore >= FUZZY_TEXT_THRESHOLD && !tied) return bestEl;
+  return null;
+}
+
+/** Levenshtein-distance similarity ratio in [0, 1]; 1 means identical (case-insensitive). */
+function textSimilarity(a: string, b: string): number {
+  const normA = a.toLowerCase();
+  const normB = b.toLowerCase();
+  if (normA === normB) return 1;
+  const maxLen = Math.max(normA.length, normB.length);
+  if (maxLen === 0) return 1;
+  return 1 - levenshteinDistance(normA, normB) / maxLen;
+}
+
+/** Classic single-row dynamic-programming Levenshtein distance. No dependencies. */
+function levenshteinDistance(a: string, b: string): number {
+  const m = a.length;
+  const n = b.length;
+  if (m === 0) return n;
+  if (n === 0) return m;
+
+  const row = new Array<number>(n + 1);
+  for (let j = 0; j <= n; j++) row[j] = j;
+
+  for (let i = 1; i <= m; i++) {
+    let prevDiag = row[0];
+    row[0] = i;
+    for (let j = 1; j <= n; j++) {
+      const temp = row[j];
+      row[j] = a[i - 1] === b[j - 1] ? prevDiag : 1 + Math.min(prevDiag, row[j], row[j - 1]);
+      prevDiag = temp;
+    }
+  }
+
+  return row[n];
 }
 
 function isVisible(el: HTMLElement): boolean {

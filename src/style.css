@@ -1,0 +1,121 @@
+/*
+ * tour-lib default theme.
+ * Plain CSS, no build step required — just <link> this file, or override the
+ * custom properties below to restyle without touching the library's JS.
+ */
+
+:root {
+  --tour-overlay-color: rgba(0, 0, 0, 0.5);
+  --tour-accent-color: #2563eb;
+  --tour-spotlight-radius: 8px;
+  --tour-spotlight-glow-color: rgba(37, 99, 235, 0.45);
+
+  --tour-tooltip-bg: #1f2937;
+  --tour-tooltip-color: #f9fafb;
+  --tour-tooltip-radius: 10px;
+  --tour-tooltip-shadow: 0 16px 32px rgba(0, 0, 0, 0.28), 0 4px 10px rgba(0, 0, 0, 0.18);
+  --tour-tooltip-padding: 16px 18px;
+  --tour-tooltip-max-width: 300px;
+
+  --tour-font: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --tour-transition-duration: 200ms;
+  --tour-transition-easing: cubic-bezier(0.16, 1, 0.3, 1);
+
+  --tour-btn-radius: 6px;
+  --tour-btn-font-size: 13px;
+}
+
+.tourlib-spotlight {
+  position: fixed;
+  border-radius: var(--tour-spotlight-radius);
+  box-shadow:
+    0 0 0 9999px var(--tour-overlay-color),
+    0 0 0 3px var(--tour-accent-color),
+    0 0 24px 4px var(--tour-spotlight-glow-color);
+  pointer-events: none;
+  z-index: 2147483000;
+  opacity: 0;
+  transform: scale(0.96);
+  transition:
+    opacity var(--tour-transition-duration) var(--tour-transition-easing),
+    transform var(--tour-transition-duration) var(--tour-transition-easing);
+}
+
+.tourlib-spotlight.tourlib-visible {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.tourlib-tooltip {
+  position: fixed;
+  z-index: 2147483001;
+  max-width: var(--tour-tooltip-max-width);
+  background: var(--tour-tooltip-bg);
+  color: var(--tour-tooltip-color);
+  border-radius: var(--tour-tooltip-radius);
+  box-shadow: var(--tour-tooltip-shadow);
+  padding: var(--tour-tooltip-padding);
+  font-family: var(--tour-font);
+  font-size: 14px;
+  line-height: 1.5;
+  opacity: 0;
+  transform: scale(0.96) translateY(4px);
+  transition:
+    opacity var(--tour-transition-duration) var(--tour-transition-easing),
+    transform var(--tour-transition-duration) var(--tour-transition-easing);
+}
+
+.tourlib-tooltip.tourlib-visible {
+  opacity: 1;
+  transform: scale(1) translateY(0);
+}
+
+.tourlib-tooltip-title {
+  font-weight: 600;
+  font-size: 15px;
+  margin: 0 0 4px;
+}
+
+.tourlib-tooltip-text {
+  margin: 0;
+}
+
+.tourlib-tooltip-actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.tourlib-btn {
+  appearance: none;
+  border: none;
+  border-radius: var(--tour-btn-radius);
+  padding: 6px 14px;
+  font-family: inherit;
+  font-size: var(--tour-btn-font-size);
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 150ms ease, opacity 150ms ease, filter 150ms ease;
+}
+
+.tourlib-btn-skip {
+  background: transparent;
+  color: var(--tour-tooltip-color);
+  opacity: 0.7;
+}
+
+.tourlib-btn-skip:hover {
+  opacity: 1;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.tourlib-btn-next {
+  background: var(--tour-accent-color);
+  color: #fff;
+}
+
+.tourlib-btn-next:hover {
+  filter: brightness(1.08);
+}

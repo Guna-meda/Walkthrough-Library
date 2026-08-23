@@ -16,6 +16,10 @@ export interface Step {
   text: string;
   placement?: StepPlacement;
   advanceOn?: StepAdvanceOn;
+  /** A path this step lives on, e.g. "/settings" or a trailing wildcard like
+   * "/settings/*". Omit for a step that applies regardless of current location
+   * (the default — fully backward compatible with flows that predate this field). */
+  route?: string;
 }
 
 export interface Flow {

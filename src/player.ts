@@ -1,4 +1,12 @@
 import type { Flow, Step, StepSelectors } from "./types.js";
+import { writeState, readState, isExpired, clearState, DEFAULT_EXPIRY_MS } from "./persistence.js";
+
+/** Identifies which flow/step was abandoned — deliberately just the two fields needed
+ * for a host app to log/report it, not the full Step (no selector/PII data). */
+export interface FlowAbandonedInfo {
+  flowId: string;
+  stepIndex: number;
+}
 
 export interface TourPlayerOptions {
   onStepUnresolved?: (step: Step) => void;
@@ -7,6 +15,20 @@ export interface TourPlayerOptions {
    * works the same with or without it; this only exists so a host UI (e.g. the React
    * wrapper) can mirror "which step is active" without polling. */
   onStepChange?: (step: Step | null) => void;
+  /** Fires when a tour is abandoned: either .stop() is called explicitly while a step
+   * is active and the flow hasn't finished, or (via getResumableState()) a persisted
+   * resumable state for a flow turns out to have expired. Never fires just because the
+   * page unloaded mid-tour — see docs/SPEC.md for the full semantics. */
+  onFlowAbandoned?: (info: FlowAbandonedInfo) => void;
+  /** Interval, in ms, between resolution attempts for a step whose `route` differs
+   * from the previous step's (see docs/SPEC.md). Default 150. */
+  pollIntervalMs?: number;
+  /** How long, in ms, to keep polling before giving up and treating the step as
+   * unresolved. Default 5000. */
+  pollTimeoutMs?: number;
+  /** Step index to start at instead of 0 — the explicit way to resume a persisted
+   * tour. Get this from getResumableState(); the player never resumes on its own. */
+  resumeFromStep?: number;
 }
 
 /** Which selector strategy resolved a step's target element (see docs/SPEC.md). */
@@ -20,6 +42,7 @@ export interface MatchLogEntry {
 const SPOTLIGHT_CLASS = "tourlib-spotlight";
 const TOOLTIP_CLASS = "tourlib-tooltip";
 const VISIBLE_CLASS = "tourlib-visible";
+const VISUALLY_HIDDEN_CLASS = "tourlib-visually-hidden";
 const SPOTLIGHT_PADDING = 4;
 const TOOLTIP_GAP = 12;
 const VIEWPORT_MARGIN = 8;
@@ -31,6 +54,26 @@ const TRANSITION_FALLBACK_MS = 220;
 // text fallback. Chosen to catch typos/minor rewording without guessing between
 // genuinely different labels.
 const FUZZY_TEXT_THRESHOLD = 0.6;
+
+const NAVIGATION_EVENT = "tourlib:navigation";
+let historyPatched = false;
+
+/** Wraps history.pushState/replaceState (once per page, regardless of how many
+ * TourPlayer instances exist) to also dispatch NAVIGATION_EVENT, so SPA route changes
+ * that don't trigger popstate/hashchange are still detected. Preserves the original
+ * call's behavior and return value exactly. */
+function patchHistoryOnce(): void {
+  if (historyPatched || typeof history === "undefined") return;
+  historyPatched = true;
+  (["pushState", "replaceState"] as const).forEach((method) => {
+    const original = history[method];
+    history[method] = function (this: History, ...args: Parameters<History[typeof method]>) {
+      const result = original.apply(this, args);
+      window.dispatchEvent(new Event(NAVIGATION_EVENT));
+      return result;
+    };
+  });
+}
 
 export class TourPlayer {
   private flow: Flow | null = null;
@@ -44,31 +87,72 @@ export class TourPlayer {
   private repositionHandler: (() => void) | null = null;
   private matchLog: MatchLogEntry[] = [];
   private onStepChange: ((step: Step | null) => void) | undefined;
+  private onFlowAbandoned: ((info: FlowAbandonedInfo) => void) | undefined;
+
+  private ariaLiveEl: HTMLDivElement | null = null;
+  private focusBeforeTooltip: HTMLElement | null = null;
+
+  private pollIntervalMs = 150;
+  private pollTimeoutMs = 5000;
+  // Bumped on every start()/stop()/advance() call; an in-flight poll checks this
+  // before acting on its result so a stopped/restarted tour can't render a step late.
+  private advanceToken = 0;
 
   start(flow: Flow, options: TourPlayerOptions = {}): void {
     this.stop();
     this.flow = flow;
     this.onStepUnresolved = options.onStepUnresolved;
     this.onStepChange = options.onStepChange;
+    this.onFlowAbandoned = options.onFlowAbandoned;
+    this.pollIntervalMs = options.pollIntervalMs ?? 150;
+    this.pollTimeoutMs = options.pollTimeoutMs ?? 5000;
     this.currentIndex = -1;
     this.matchLog = [];
-    this.advance(0);
+    this.setupAriaLive();
+    document.addEventListener("keydown", this.handleKeydown);
+    patchHistoryOnce();
+    window.addEventListener(NAVIGATION_EVENT, this.handleNavigationEvent);
+    window.addEventListener("popstate", this.handleNavigationEvent);
+    window.addEventListener("hashchange", this.handleNavigationEvent);
+    void this.advance(options.resumeFromStep ?? 0);
   }
 
   next(): void {
     if (!this.flow) return;
-    this.advance(this.currentIndex + 1);
+    void this.advance(this.currentIndex + 1);
   }
 
+  /** Stops the tour. If a step was active and the flow hadn't finished, this counts as
+   * abandonment and fires onFlowAbandoned (see docs/SPEC.md) — unlike a natural
+   * completion, which tears down the same UI but isn't an abandonment. */
   stop(): void {
+    this.stopInternal(false);
+  }
+
+  private stopInternal(completed: boolean): void {
     const wasActive = this.flow !== null && this.currentIndex >= 0;
+    const abandonedFlow = this.flow;
+    const abandonedStepIndex = this.currentIndex;
+    this.advanceToken++;
     this.teardownStepUI();
+    document.removeEventListener("keydown", this.handleKeydown);
+    window.removeEventListener(NAVIGATION_EVENT, this.handleNavigationEvent);
+    window.removeEventListener("popstate", this.handleNavigationEvent);
+    window.removeEventListener("hashchange", this.handleNavigationEvent);
+    this.teardownAriaLive();
     this.flow = null;
     this.currentIndex = -1;
     this.onStepUnresolved = undefined;
     const onStepChange = this.onStepChange;
+    const onFlowAbandoned = this.onFlowAbandoned;
     this.onStepChange = undefined;
-    if (wasActive) onStepChange?.(null);
+    this.onFlowAbandoned = undefined;
+    if (wasActive) {
+      onStepChange?.(null);
+      if (!completed && abandonedFlow) {
+        onFlowAbandoned?.({ flowId: abandonedFlow.id, stepIndex: abandonedStepIndex });
+      }
+    }
   }
 
   /** Which selector strategy resolved each step played so far, in play order. */
@@ -76,24 +160,95 @@ export class TourPlayer {
     return this.matchLog.slice();
   }
 
-  /** Walks forward from startIndex, skipping any step whose target can't be resolved. */
-  private advance(startIndex: number): void {
+  /** Call on page load, before .start(), to check whether a persisted tour can be
+   * resumed. Returns { flowId, stepIndex } only if the persisted state matches the
+   * given flow's id/version and hasn't expired — resuming is always the host app's
+   * explicit choice via .start(flow, { resumeFromStep }); the player never resumes on
+   * its own. If the persisted state exists but has expired, this is exactly the
+   * "discovered after the fact" abandonment case (b) in docs/SPEC.md: onFlowAbandoned
+   * fires (if provided) and the stale state is cleared so it isn't reported twice. */
+  getResumableState(
+    flow: Flow,
+    options: { expiryMs?: number; onFlowAbandoned?: (info: FlowAbandonedInfo) => void } = {}
+  ): { flowId: string; stepIndex: number } | null {
+    const state = readState();
+    if (!state) return null;
+    if (state.flowId !== flow.id || state.flowVersion !== flow.version) return null;
+    const expiryMs = options.expiryMs ?? DEFAULT_EXPIRY_MS;
+    if (isExpired(state, expiryMs)) {
+      options.onFlowAbandoned?.({ flowId: state.flowId, stepIndex: state.stepIndex });
+      clearState();
+      return null;
+    }
+    return { flowId: state.flowId, stepIndex: state.stepIndex };
+  }
+
+  /** Manually signal that navigation may have happened, for apps that don't want
+   * history.pushState/replaceState patched or whose router doesn't fire popstate/
+   * hashchange. Automatic detection (see patchHistoryOnce) calls this too. */
+  notifyNavigation(): void {
+    this.handleNavigation();
+  }
+
+  private handleNavigationEvent = (): void => {
+    this.handleNavigation();
+  };
+
+  /** Re-attempts resolution of the currently active step if its target has gone stale
+   * (removed from the document, e.g. by an SPA route change) — using the poll-based
+   * resolver in case the step's route now matches. A still-valid current target means
+   * nothing changed as far as the tour is concerned, so this is a no-op. */
+  private handleNavigation(): void {
+    if (!this.flow || this.currentIndex < 0) return;
+    if (this.currentTarget && document.contains(this.currentTarget)) return;
+    void this.advance(this.currentIndex);
+  }
+
+  /** Walks forward from startIndex, skipping any step whose target can't be resolved.
+   * A step whose `route` differs from the previous step's is polled (see
+   * pollResolveTarget) instead of resolved instantly, since a navigation may just have
+   * happened and the new page's DOM may not be ready yet. */
+  private async advance(startIndex: number): Promise<void> {
     if (!this.flow) return;
+    const flow = this.flow;
+    const token = ++this.advanceToken;
     let index = startIndex;
-    while (index < this.flow.steps.length) {
-      const step = this.flow.steps[index];
-      const match = this.resolveTarget(step.selectors);
+    while (index < flow.steps.length) {
+      const step = flow.steps[index];
+      const needsPoll = index > 0 && step.route !== undefined && step.route !== flow.steps[index - 1].route;
+      const match = needsPoll ? await this.pollResolveTarget(step.selectors) : this.resolveTarget(step.selectors);
+      if (token !== this.advanceToken) return; // stopped or restarted while we were waiting
       if (match) {
         this.currentIndex = index;
         this.matchLog.push({ stepId: step.id, strategy: match.strategy });
         this.renderStep(step, match.element);
+        writeState({ flowId: flow.id, stepIndex: index, flowVersion: flow.version, timestamp: Date.now() });
         this.onStepChange?.(step);
         return;
       }
       this.onStepUnresolved?.(step);
       index++;
     }
-    this.stop();
+    this.stopInternal(true);
+  }
+
+  /** Retries resolveTarget on pollIntervalMs until it succeeds or pollTimeoutMs
+   * elapses, giving a freshly-navigated-to page's DOM time to render. */
+  private pollResolveTarget(
+    selectors: StepSelectors
+  ): Promise<{ element: Element; strategy: MatchStrategy } | null> {
+    const deadline = Date.now() + this.pollTimeoutMs;
+    return new Promise((resolve) => {
+      const attempt = () => {
+        const match = this.resolveTarget(selectors);
+        if (match || Date.now() >= deadline) {
+          resolve(match);
+          return;
+        }
+        setTimeout(attempt, this.pollIntervalMs);
+      };
+      attempt();
+    });
   }
 
   private renderStep(step: Step, target: Element): void {
@@ -108,16 +263,32 @@ export class TourPlayer {
 
     this.tooltipEl = document.createElement("div");
     this.tooltipEl.className = TOOLTIP_CLASS;
+    // A guided tooltip is informational and non-blocking — the spotlighted page
+    // element behind it stays interactive and is exactly what the user is meant to
+    // act on next. role="alertdialog" implies an urgent, typically modal interruption
+    // demanding immediate response, which doesn't fit; role="dialog" (non-modal here,
+    // hence aria-modal="false") is the better match.
+    this.tooltipEl.setAttribute("role", "dialog");
+    this.tooltipEl.setAttribute("aria-modal", "false");
+    this.tooltipEl.tabIndex = -1;
 
+    const textId = `tourlib-tooltip-text-${step.id}`;
     if (step.title) {
+      const titleId = `tourlib-tooltip-title-${step.id}`;
       const titleEl = document.createElement("div");
       titleEl.className = "tourlib-tooltip-title";
+      titleEl.id = titleId;
       titleEl.textContent = step.title;
       this.tooltipEl.appendChild(titleEl);
+      this.tooltipEl.setAttribute("aria-labelledby", titleId);
+      this.tooltipEl.setAttribute("aria-describedby", textId);
+    } else {
+      this.tooltipEl.setAttribute("aria-labelledby", textId);
     }
 
     const textEl = document.createElement("div");
     textEl.className = "tourlib-tooltip-text";
+    textEl.id = textId;
     textEl.textContent = step.text;
     this.tooltipEl.appendChild(textEl);
 
@@ -153,6 +324,24 @@ export class TourPlayer {
       this.currentClickHandler = () => this.next();
       target.addEventListener("click", this.currentClickHandler, { once: true });
     }
+
+    this.announce(step);
+    this.moveFocusIntoTooltip(nextBtn);
+  }
+
+  /** Updates the shared aria-live region so screen readers announce the new step's
+   * instruction automatically, without moving the user's focus to do it. */
+  private announce(step: Step): void {
+    if (!this.ariaLiveEl) return;
+    this.ariaLiveEl.textContent = step.title ? `${step.title}: ${step.text}` : step.text;
+  }
+
+  /** Saves whatever had focus so it can be restored later (see teardownStepUI), then
+   * moves focus into the new tooltip — onto its primary action by default. */
+  private moveFocusIntoTooltip(preferredEl: HTMLElement): void {
+    if (!this.tooltipEl) return;
+    this.focusBeforeTooltip = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    preferredEl.focus();
   }
 
   /** Adds the visible class a frame after insertion so the CSS opacity/scale transition actually runs. */
@@ -225,6 +414,66 @@ export class TourPlayer {
     this.spotlightEl = null;
     this.fadeOutAndRemove(this.tooltipEl);
     this.tooltipEl = null;
+
+    // Restore focus to wherever it was before this tooltip took it — whether the
+    // tour just stopped or is about to render the next step's tooltip on top.
+    if (this.focusBeforeTooltip && document.contains(this.focusBeforeTooltip)) {
+      this.focusBeforeTooltip.focus();
+    }
+    this.focusBeforeTooltip = null;
+  }
+
+  /** Escape stops the tour like .stop() does; Tab/Shift+Tab is trapped within the
+   * active tooltip's focusable elements while one is shown. Bound as a class field
+   * (not a method) so the same reference can be added/removed from `document`. */
+  private handleKeydown = (ev: KeyboardEvent): void => {
+    if (ev.key === "Escape") {
+      this.stop();
+      return;
+    }
+    if (ev.key === "Tab" && this.tooltipEl) {
+      this.trapTabKey(ev);
+    }
+  };
+
+  private trapTabKey(ev: KeyboardEvent): void {
+    const tooltipEl = this.tooltipEl;
+    if (!tooltipEl) return;
+    const focusable = getFocusableElements(tooltipEl);
+    if (focusable.length === 0) {
+      ev.preventDefault();
+      tooltipEl.focus();
+      return;
+    }
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    const active = document.activeElement;
+    const activeIsInside = active instanceof Node && tooltipEl.contains(active);
+    if (ev.shiftKey) {
+      if (!activeIsInside || active === first) {
+        ev.preventDefault();
+        last.focus();
+      }
+    } else {
+      if (!activeIsInside || active === last) {
+        ev.preventDefault();
+        first.focus();
+      }
+    }
+  }
+
+  private setupAriaLive(): void {
+    this.ariaLiveEl = document.createElement("div");
+    this.ariaLiveEl.className = VISUALLY_HIDDEN_CLASS;
+    this.ariaLiveEl.setAttribute("role", "status");
+    this.ariaLiveEl.setAttribute("aria-live", "polite");
+    this.ariaLiveEl.setAttribute("aria-atomic", "true");
+    document.body.appendChild(this.ariaLiveEl);
+  }
+
+  private teardownAriaLive(): void {
+    this.ariaLiveEl?.remove();
+    this.ariaLiveEl = null;
   }
 
   /** Lets the outgoing spotlight/tooltip fade out via CSS while the next step's UI fades in on top. */
@@ -368,6 +617,14 @@ function levenshteinDistance(a: string, b: string): number {
 
 function isVisible(el: HTMLElement): boolean {
   return el.getClientRects().length > 0;
+}
+
+const FOCUSABLE_SELECTOR =
+  'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
+/** Focusable descendants of a tooltip, in DOM order — used by the Tab trap. */
+function getFocusableElements(container: HTMLElement): HTMLElement[] {
+  return Array.from(container.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)).filter(isVisible);
 }
 
 function cssAttrEscape(value: string): string {

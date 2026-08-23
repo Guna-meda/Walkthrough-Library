@@ -94,12 +94,12 @@ export class TourRecorder {
     this.stop();
 
     const json = JSON.stringify(flow, null, 2);
-    console.log("tour-lib: captured flow", flow);
+    console.log("walkthrough-lib: captured flow", flow);
     console.log(json);
 
     if (navigator.clipboard?.writeText) {
       navigator.clipboard.writeText(json).catch((err) => {
-        console.warn("tour-lib: could not copy flow JSON to clipboard", err);
+        console.warn("walkthrough-lib: could not copy flow JSON to clipboard", err);
       });
     }
   }

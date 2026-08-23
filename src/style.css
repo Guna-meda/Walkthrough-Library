@@ -1,5 +1,5 @@
 /*
- * tour-lib default theme.
+ * walkthrough-lib default theme.
  * Plain CSS, no build step required — just <link> this file, or override the
  * custom properties below to restyle without touching the library's JS.
  */
@@ -166,4 +166,18 @@
 .tourlib-capture-count {
   font-size: 12px;
   opacity: 0.8;
+}
+
+/* Screen-reader-only: used for the aria-live announcer region. Kept in the normal
+   document flow (not display:none) so assistive tech still reads it. */
+.tourlib-visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }

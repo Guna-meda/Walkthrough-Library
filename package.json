@@ -1,11 +1,26 @@
 {
-  "name": "tour-lib",
-  "version": "0.0.1",
+  "name": "walkthrough-lib",
+  "version": "0.1.0",
   "description": "A framework-agnostic JS library for guided in-app product walkthroughs. Zero dependencies, no AI, no network calls required.",
   "type": "module",
   "main": "./dist/cjs/index.js",
   "module": "./dist/esm/index.js",
   "types": "./dist/esm/index.d.ts",
+  "keywords": [
+    "product-tour",
+    "onboarding",
+    "walkthrough",
+    "guided-tour",
+    "dom-capture"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Guna-meda/Walkthrough-Library.git"
+  },
+  "homepage": "https://github.com/Guna-meda/Walkthrough-Library#readme",
+  "bugs": {
+    "url": "https://github.com/Guna-meda/Walkthrough-Library/issues"
+  },
   "exports": {
     ".": {
       "import": "./dist/esm/index.js",
@@ -21,16 +36,19 @@
       "import": "./dist/esm/react/useTour.js",
       "require": "./dist/cjs/react/useTour.js",
       "types": "./dist/esm/react/useTour.d.ts"
-    }
+    },
+    "./style.css": "./dist/style.css"
   },
   "files": [
     "dist"
   ],
   "scripts": {
-    "build": "npm run build:esm && npm run build:cjs",
+    "build": "npm run build:esm && npm run build:cjs && npm run copy:css",
     "build:esm": "tsc -p tsconfig.esm.json",
     "build:cjs": "tsc -p tsconfig.cjs.json",
-    "typecheck": "tsc --noEmit"
+    "copy:css": "node -e \"require('fs').copyFileSync('src/style.css', 'dist/style.css')\"",
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "npm run build"
   },
   "license": "MIT",
   "peerDependencies": {

@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
-<title>tour-lib demo</title>
+<title>walkthrough-lib demo</title>
 <link rel="stylesheet" href="../src/style.css" />
 <style>
   * { box-sizing: border-box; }
@@ -165,7 +165,7 @@
     document.getElementById("start-tour").addEventListener("click", () => {
       player.start(flow, {
         onStepUnresolved: (step) => {
-          console.warn("tour-lib: could not resolve step", step.id);
+          console.warn("walkthrough-lib: could not resolve step", step.id);
         }
       });
     });

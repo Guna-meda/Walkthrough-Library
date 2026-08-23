@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>multipage-demo: page A</title>
+<link rel="stylesheet" href="../../src/style.css" />
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: system-ui, -apple-system, sans-serif;
+    color: #111827;
+    background: #f9fafb;
+    padding: 40px;
+  }
+  .content { max-width: 640px; }
+  #go-to-page-b {
+    display: inline-block;
+    margin-top: 16px;
+    padding: 10px 18px;
+    background: #2563eb;
+    color: #fff;
+    border-radius: 6px;
+    text-decoration: none;
+    font-size: 14px;
+  }
+  #start-tour {
+    margin-top: 24px;
+    padding: 8px 16px;
+    background: #16a34a;
+    color: #fff;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 14px;
+    display: block;
+  }
+</style>
+</head>
+<body>
+  <div class="content">
+    <h1>Page A</h1>
+    <p>This is a plain, separate HTML page — a real, full navigation (not an SPA route
+       change) takes you from here to Page B.</p>
+    <a id="go-to-page-b" data-testid="go-to-page-b" href="page-b.html">Go to Page B</a>
+    <button id="start-tour">Start Tour</button>
+  </div>
+
+  <script type="module">
+    import { TourPlayer } from "../../dist/esm/index.js";
+    import { flow } from "./flow.js";
+
+    const player = new TourPlayer();
+
+    document.getElementById("start-tour").addEventListener("click", () => {
+      player.start(flow, {
+        onStepUnresolved: (step) => {
+          console.warn("walkthrough-lib: could not resolve step", step.id);
+        },
+        onFlowAbandoned: (info) => {
+          console.warn("walkthrough-lib: flow abandoned", info);
+        },
+      });
+    });
+  </script>
+</body>
+</html>

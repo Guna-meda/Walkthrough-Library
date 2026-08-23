@@ -7,12 +7,12 @@ you can skip hand-writing tooltip copy after recording a flow with `TourRecorder
 
 **This is entirely optional.**
 
-- tour-lib works perfectly with zero AI usage. `TourPlayer` and `TourRecorder` never
-  call `suggestStepCopy`, import it, or know it exists.
-- It requires **your own Anthropic API key** — tour-lib doesn't provide one, doesn't
-  proxy the request, and doesn't store or transmit your key anywhere except directly
-  to `api.anthropic.com`.
-- It's published as a separate entry point (`tour-lib/ai-copy`), so importing the core
+- walkthrough-lib works perfectly with zero AI usage. `TourPlayer` and `TourRecorder`
+  never call `suggestStepCopy`, import it, or know it exists.
+- It requires **your own Anthropic API key** — walkthrough-lib doesn't provide one,
+  doesn't proxy the request, and doesn't store or transmit your key anywhere except
+  directly to `api.anthropic.com`.
+- It's published as a separate entry point (`walkthrough-lib/ai-copy`), so importing the core
   library never pulls this file, or a `fetch` call, into your bundle.
 - It makes a real network request that costs money on your Anthropic account. Call it
   yourself, per step, only when you want it.
@@ -26,8 +26,8 @@ flow file, rather than shipping the key inside a production web app.
 
 ```ts
 // Published package:
-import { TourRecorder } from "tour-lib";
-import { suggestStepCopy } from "tour-lib/ai-copy";
+import { TourRecorder } from "walkthrough-lib";
+import { suggestStepCopy } from "walkthrough-lib/ai-copy";
 
 // In this repo during development, that's instead:
 // import { TourRecorder } from "../dist/esm/index.js";

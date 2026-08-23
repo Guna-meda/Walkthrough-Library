@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>multipage-demo: page B</title>
+<link rel="stylesheet" href="../../src/style.css" />
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: system-ui, -apple-system, sans-serif;
+    color: #111827;
+    background: #f9fafb;
+    padding: 40px;
+  }
+  .content { max-width: 640px; }
+  #finish-btn {
+    display: inline-block;
+    margin-top: 16px;
+    padding: 10px 18px;
+    background: #2563eb;
+    color: #fff;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 14px;
+  }
+  .status-panel {
+    margin-top: 40px;
+    padding: 16px 20px;
+    background: #fff;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    max-width: 480px;
+  }
+  .status-panel h2 {
+    font-size: 14px;
+    margin: 0 0 8px;
+  }
+  .status-panel button {
+    margin-top: 10px;
+    padding: 6px 12px;
+    font-size: 13px;
+    border-radius: 6px;
+    border: 1px solid #d1d5db;
+    background: #f3f4f6;
+    cursor: pointer;
+  }
+  #status-log {
+    margin-top: 10px;
+    font-size: 13px;
+    font-family: ui-monospace, Consolas, monospace;
+    white-space: pre-wrap;
+    color: #374151;
+  }
+</style>
+</head>
+<body>
+  <div class="content">
+    <h1>Page B</h1>
+    <p>Arriving here from Page A's link should automatically pick the tour back up on
+       the button below — no manual step-index passing.</p>
+    <button id="finish-btn" data-testid="finish-btn">Finish</button>
+  </div>
+
+  <div class="status-panel">
+    <h2>Expiry scenario (proves getResumableState() rejects stale state)</h2>
+    <button id="simulate-expired">Simulate 40-minutes-old persisted state, then re-check</button>
+    <div id="status-log"></div>
+  </div>
+
+  <script type="module">
+    import { TourPlayer } from "../../dist/esm/index.js";
+    import { readState, writeState } from "../../dist/esm/persistence.js";
+    import { flow } from "./flow.js";
+
+    const player = new TourPlayer();
+    const log = (msg) => {
+      const el = document.getElementById("status-log");
+      el.textContent += (el.textContent ? "\n" : "") + msg;
+    };
+
+    function startOrResume() {
+      const resumable = player.getResumableState(flow, {
+        onFlowAbandoned: (info) => log(`onFlowAbandoned fired (expired resumable state): ${JSON.stringify(info)}`),
+      });
+
+      if (resumable) {
+        log(`getResumableState() -> ${JSON.stringify(resumable)}, resuming.`);
+        player.start(flow, {
+          resumeFromStep: resumable.stepIndex,
+          onStepUnresolved: (step) => console.warn("walkthrough-lib: could not resolve step", step.id),
+          onFlowAbandoned: (info) => log(`onFlowAbandoned fired (explicit stop): ${JSON.stringify(info)}`),
+        });
+      } else {
+        log("getResumableState() -> null (no valid persisted state to resume).");
+      }
+    }
+
+    startOrResume();
+
+    document.getElementById("simulate-expired").addEventListener("click", () => {
+      const state = readState();
+      if (!state) {
+        log("No persisted state exists to age — start the tour on page-a.html first.");
+        return;
+      }
+      const THIRTY_MIN = 30 * 60 * 1000;
+      writeState({ ...state, timestamp: Date.now() - THIRTY_MIN - 10 * 60 * 1000 });
+      log("Rewrote persisted timestamp to 40 minutes ago (past the 30-minute default expiry).");
+      const resumable = player.getResumableState(flow, {
+        onFlowAbandoned: (info) => log(`onFlowAbandoned fired (expired): ${JSON.stringify(info)}`),
+      });
+      log(`getResumableState() after aging -> ${JSON.stringify(resumable)} (expected null)`);
+    });
+  </script>
+</body>
+</html>

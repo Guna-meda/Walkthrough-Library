@@ -1,5 +1,5 @@
-import type { Flow } from "tour-lib";
-import { useTour } from "tour-lib/react";
+import type { Flow } from "walkthrough-lib";
+import { useTour } from "walkthrough-lib/react";
 import "./App.css";
 
 const flow: Flow = {

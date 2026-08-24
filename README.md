@@ -60,9 +60,11 @@ pulls in React, and `react` is only a peer dependency, not a hard one.
 
 ## Optional add-ons
 
-- **AI-suggested copy** (`walkthrough-lib/ai-copy`) — an opt-in helper that asks the
-  Anthropic API to suggest a `title`/`text` for a captured step, using your own API
-  key. Never called automatically; see [examples/ai-copy-example.md](examples/ai-copy-example.md).
+- **AI-suggested copy** (`walkthrough-lib/ai-copy`) — an opt-in helper that suggests a
+  `title`/`text` for a captured step. It builds the prompt and hands it to a
+  `generate` function you supply, so it works with any provider (Anthropic, OpenAI,
+  a local model, or a mock for testing). Never called automatically; see
+  [examples/ai-copy-example.md](examples/ai-copy-example.md).
 
 ## Why not Shepherd.js / Intro.js / driver.js?
 

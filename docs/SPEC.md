@@ -147,6 +147,20 @@ changes that swap the DOM without a full page load. Apps that don't want history
 or whose router doesn't fire these events, can call `player.notifyNavigation()` manually
 to trigger the same check.
 
+## DOM capture (TourRecorder)
+
+`TourRecorder.start(options?)` listens for real click events and builds Step JSON (see
+above) from the clicked element's `data-testid`, `aria-label`, visible text, and a
+generated unique CSS path — no video/screenshot capture, ever.
+
+**Production-host safety warning:** on `start()`, if `window.location.hostname` is not
+`localhost`, `127.0.0.1`, or listed in the optional `options.allowedHosts` array, it
+logs a `console.warn` noting that the capture tool looks like it's running on a
+production host and isn't meant for shipping to real users. This is a warning-only
+safety net to catch accidental production imports — it never throws or blocks
+execution, and a developer working against a legitimate staging domain can pass its
+hostname via `allowedHosts` to silence it.
+
 ## Explicitly out of scope for v0
 
 - Fuzzy/ML-based **visual** matching (pixel/screenshot comparison, layout heuristics) —

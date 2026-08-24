@@ -4,6 +4,14 @@ const CAPTURE_PANEL_CLASS = "tourlib-capture-panel";
 const MAX_SELECTOR_TEXT_LENGTH = 60;
 const DEFAULT_PLACEMENT: StepPlacement = "bottom";
 const DEFAULT_FLOW_ID = "captured-flow";
+const DEFAULT_ALLOWED_HOSTS = ["localhost", "127.0.0.1"];
+
+export interface TourRecorderStartOptions {
+  /** Extra hostnames (matched exactly against window.location.hostname) treated as
+   * safe for capture, in addition to "localhost" and "127.0.0.1". Pass the hostname of
+   * a legitimate staging/dev domain here to silence the production-host warning. */
+  allowedHosts?: string[];
+}
 
 export class TourRecorder {
   private recording = false;
@@ -12,10 +20,12 @@ export class TourRecorder {
   private panelEl: HTMLDivElement | null = null;
   private countEl: HTMLElement | null = null;
 
-  start(): void {
+  start(options?: TourRecorderStartOptions): void {
     if (this.recording) return;
     this.recording = true;
     this.steps = [];
+
+    warnIfLikelyProductionHost(options?.allowedHosts);
 
     this.clickHandler = (ev) => this.handleClick(ev);
     document.addEventListener("click", this.clickHandler, true);
@@ -159,4 +169,20 @@ function isUniquePath(path: string): boolean {
   } catch {
     return false;
   }
+}
+
+/** Warning-only safety net, not an enforced restriction: flags an accidental
+ * production import of the capture tool without blocking it, since a developer working
+ * against a legitimate staging domain can pass `allowedHosts` to silence it. */
+function warnIfLikelyProductionHost(allowedHosts?: string[]): void {
+  const hostname = window.location.hostname;
+  const allowed = [...DEFAULT_ALLOWED_HOSTS, ...(allowedHosts ?? [])];
+  if (allowed.includes(hostname)) return;
+
+  console.warn(
+    `walkthrough-lib/capture is running on what looks like a production host ("${hostname}"). ` +
+      "This module is meant for local/staging use while building flows, not for shipping to " +
+      "real users. If this is a legitimate staging domain, pass { allowedHosts: [...] } to " +
+      "TourRecorder.start() to silence this warning."
+  );
 }

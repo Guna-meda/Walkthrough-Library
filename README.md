@@ -7,6 +7,22 @@ steps survive minor UI changes via fallback selectors.
 It shows a spotlight + tooltip on a real DOM element and waits for the *actual user*
 to click it before advancing (not an auto-playing video, not a passive animation).
 
+## Why not Shepherd.js / Intro.js / driver.js?
+
+Those are solid, mature libraries. walkthrough-lib exists for three specific reasons
+they don't cover:
+
+1. **Flows can be captured, not just hand-written.** `TourRecorder` listens to real
+   DOM clicks and generates valid `Step` JSON directly from your app — no manually
+   writing selectors for every step.
+2. **Steps survive minor UI changes.** Each step carries a ranked fallback chain
+   (`testId` → `ariaLabel` → `text` → `cssPath` → fuzzy text as a deterministic last
+   resort) instead of a single brittle selector, so a small refactor doesn't silently
+   break your onboarding flow.
+3. **Zero dependencies, zero required AI or network calls.** The core player and
+   capture tool work 100% offline. AI is a separate, fully optional add-on you opt into
+   per step — never a requirement to use the library.
+
 ## Install
 
 ```sh
@@ -27,22 +43,7 @@ const flow = {
 new TourPlayer().start(flow);
 ```
 
-## Quickstart: capture a flow instead of hand-writing it
-
-`TourRecorder` listens for real clicks and builds `Step` JSON for you — each step gets
-all four fallback selectors (`testId`, `ariaLabel`, `text`, `cssPath`) where available.
-While recording, a small floating panel shows a step count and a "Finish & Export"
-button that copies the resulting flow JSON to your clipboard.
-
-```ts
-import { TourRecorder } from "walkthrough-lib";
-
-const recorder = new TourRecorder();
-recorder.start();
-// ...user clicks through the app...
-const flow = recorder.exportFlow("onboarding", "Onboarding Tour");
-recorder.stop();
-```
+Full callback/method reference in [docs/guides/player.md](docs/guides/player.md).
 
 ## Quickstart: React
 
@@ -56,50 +57,64 @@ function App() {
 ```
 
 `walkthrough-lib/react` is a separate entry point — importing the core package never
-pulls in React, and `react` is only a peer dependency, not a hard one.
+pulls in React, and `react` is only a peer dependency, not a hard one. Full API and a
+complete component in [docs/guides/react.md](docs/guides/react.md).
 
-## Optional add-ons
+## Quickstart: capturing a flow instead of hand-writing it
 
-- **AI-suggested copy** (`walkthrough-lib/ai-copy`) — an opt-in helper that suggests a
-  `title`/`text` for a captured step. It builds the prompt and hands it to a
-  `generate` function you supply, so it works with any provider (Anthropic, OpenAI,
-  a local model, or a mock for testing). Never called automatically; see
-  [examples/ai-copy-example.md](examples/ai-copy-example.md).
+`TourRecorder` listens for real clicks and builds `Step` JSON for you — each step gets
+all four fallback selectors (`testId`, `ariaLabel`, `text`, `cssPath`) where available.
+While recording, a small floating panel shows a step count and a "Finish & Export"
+button that copies the resulting flow JSON to your clipboard.
 
-## Why not Shepherd.js / Intro.js / driver.js?
+```ts
+import { TourRecorder } from "walkthrough-lib";
 
-Those are solid, mature libraries. walkthrough-lib exists for three specific reasons
-they don't cover:
+const recorder = new TourRecorder();
+recorder.start(); // warns via console if not on localhost/127.0.0.1 or an allowedHosts entry
+// ...user clicks through the app...
+const flow = recorder.exportFlow("onboarding", "Onboarding Tour");
+recorder.stop();
+```
 
-1. **Flows can be captured, not just hand-written.** `TourRecorder` listens to real
-   DOM clicks and generates valid `Step` JSON directly from your app — no manually
-   writing selectors for every step.
-2. **Steps survive minor UI changes.** Each step carries a ranked fallback chain
-   (`testId` → `ariaLabel` → `text` → `cssPath` → fuzzy text as a deterministic last
-   resort) instead of a single brittle selector, so a small refactor doesn't silently
-   break your onboarding flow.
-3. **Zero dependencies, zero required AI or network calls.** The core player and
-   capture tool work 100% offline. AI is a separate, fully optional add-on you opt into
-   per step — never a requirement to use the library.
+Pass `{ allowedHosts: ["staging.myapp.com"] }` to `start()` to silence that warning on
+a legitimate non-local domain. Full workflow in
+[docs/guides/capture.md](docs/guides/capture.md).
+
+## Quickstart: AI-assisted copy (optional)
+
+```ts
+import { suggestStepCopy } from "walkthrough-lib/ai-copy";
+
+const suggestion = await suggestStepCopy(
+  step,
+  { tag: "button", role: "button", nearbyText: "Create your first project" },
+  generate // (prompt: string) => Promise<string> — you provide this, any provider
+);
+step.title = suggestion.title;
+step.text = suggestion.text;
+```
+
+`generate` is entirely your own function — point it at Anthropic, OpenAI, a local
+model, or a mock for testing; `walkthrough-lib` never makes the network call itself and
+never requires an API key anywhere else in the library. Full signature and provider
+examples in [docs/guides/ai-copy.md](docs/guides/ai-copy.md).
+
+## Features
+
+- **Multi-page support** — flows can span real page navigations or SPA route changes,
+  with automatic resume. [Guide](docs/guides/multipage.md)
+- **Self-healing selector fallback** — a five-strategy, deterministic matching chain so
+  minor UI changes don't silently break a flow. [Guide](docs/guides/resilience.md)
+- **Accessibility** — keyboard (Escape, focus trap), `aria-live` announcements, and
+  proper ARIA roles, built in by default. [Guide](docs/guides/accessibility.md)
+- **Completion/abandonment tracking** — `onStepChange`/`onFlowAbandoned` callbacks so a
+  host app can track how far users get. [Guide](docs/guides/player.md)
 
 ## Flow & Step schema
 
 Flows are plain JSON — see [docs/SPEC.md](docs/SPEC.md) for the full `Flow`/`Step`
 schema, the selector fallback chain, and what's explicitly out of scope for v0.
-
-## Accessibility
-
-- **Keyboard**: Escape stops the tour at any point. Tab/Shift+Tab is trapped within the
-  active tooltip's Skip/Next buttons while it's shown, and focus is restored to whatever
-  had it before the tour (or before the current step's tooltip) took it.
-- **Screen readers**: each step's title and text are announced automatically via a
-  visually-hidden `aria-live="polite"` region — no need to tab to the tooltip to hear
-  what changed. The tooltip itself uses `role="dialog"` with `aria-modal="false"` (it's
-  informational and non-blocking — the spotlighted page element behind it stays
-  interactive), and `aria-labelledby`/`aria-describedby` wired to its title/text.
-- **Non-blocking by design**: the tooltip never traps interaction with the rest of the
-  page — only Tab/Shift+Tab cycling within the tooltip itself is trapped, so assistive
-  tech and the target element stay reachable.
 
 ## License
 

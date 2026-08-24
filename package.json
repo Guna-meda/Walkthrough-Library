@@ -23,19 +23,34 @@
   },
   "exports": {
     ".": {
-      "import": "./dist/esm/index.js",
-      "require": "./dist/cjs/index.js",
-      "types": "./dist/esm/index.d.ts"
+      "import": {
+        "types": "./dist/esm/index.d.ts",
+        "default": "./dist/esm/index.js"
+      },
+      "require": {
+        "types": "./dist/cjs/index.d.ts",
+        "default": "./dist/cjs/index.js"
+      }
     },
     "./ai-copy": {
-      "import": "./dist/esm/ai-copy.js",
-      "require": "./dist/cjs/ai-copy.js",
-      "types": "./dist/esm/ai-copy.d.ts"
+      "import": {
+        "types": "./dist/esm/ai-copy.d.ts",
+        "default": "./dist/esm/ai-copy.js"
+      },
+      "require": {
+        "types": "./dist/cjs/ai-copy.d.ts",
+        "default": "./dist/cjs/ai-copy.js"
+      }
     },
     "./react": {
-      "import": "./dist/esm/react/useTour.js",
-      "require": "./dist/cjs/react/useTour.js",
-      "types": "./dist/esm/react/useTour.d.ts"
+      "import": {
+        "types": "./dist/esm/react/useTour.d.ts",
+        "default": "./dist/esm/react/useTour.js"
+      },
+      "require": {
+        "types": "./dist/cjs/react/useTour.d.ts",
+        "default": "./dist/cjs/react/useTour.js"
+      }
     },
     "./style.css": "./dist/style.css"
   },

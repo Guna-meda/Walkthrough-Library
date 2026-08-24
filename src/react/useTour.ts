@@ -1,3 +1,5 @@
+"use client";
+
 import { useCallback, useEffect, useRef, useState } from "react";
 import { TourPlayer } from "../player.js";
 import type { Flow, Step } from "../types.js";

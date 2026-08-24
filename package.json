@@ -43,7 +43,7 @@
     "dist"
   ],
   "scripts": {
-    "build": "tsup && node scripts/fix-cjs-dts.cjs && npm run copy:css && npm run mark:cjs",
+    "build": "tsup && node scripts/fix-cjs-dts.cjs && node scripts/fix-use-client.cjs && npm run copy:css && npm run mark:cjs",
     "copy:css": "node -e \"require('fs').copyFileSync('src/style.css', 'dist/style.css')\"",
     "mark:cjs": "node -e \"require('fs').writeFileSync('dist/cjs/package.json', JSON.stringify({ type: 'commonjs' }, null, 2) + '\\n')\"",
     "typecheck": "tsc --noEmit",

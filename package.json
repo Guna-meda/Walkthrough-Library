@@ -1,6 +1,6 @@
 {
   "name": "walkthrough-lib",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "A framework-agnostic JS library for guided in-app product walkthroughs. Zero dependencies, no AI, no network calls required.",
   "type": "module",
   "main": "./dist/cjs/index.js",

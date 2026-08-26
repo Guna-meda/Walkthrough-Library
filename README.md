@@ -1,11 +1,36 @@
 # walkthrough-lib
 
-A framework-agnostic library for guided in-app product walkthroughs ,flows are
-captured from real clicks instead of hand-written, and
-steps survive minor UI changes via fallback selectors.
+A framework-agnostic library for building guided in-app walkthroughs.
+
+**Capture a walkthrough from your real UI, save it as JSON, and replay it with
+resilient target matching** — instead of hand-writing every step and hoping the
+selectors never break.
 
 It shows a spotlight + tooltip on a real DOM element and waits for the *actual user*
 to click it before advancing (not an auto-playing video, not a passive animation).
+
+## How it works
+
+```text
+Your app → TourRecorder → Flow JSON → TourPlayer → Guided walkthrough
+```
+
+1. Capture a flow by clicking through your real UI.
+2. Save the generated Flow JSON — plain, portable, versionable.
+3. Play it anywhere with `TourPlayer` or `useTour`.
+4. If the UI changes, the player walks its fallback selector chain to still find the
+   target.
+
+## At a glance
+
+- **Capture flows** from real DOM clicks instead of hand-writing every step
+- **Resilient targeting**: `testId → ariaLabel → text → cssPath → fuzzy text`
+- **Framework agnostic** core player using plain DOM APIs
+- **React support** through a separate `useTour` entry point
+- **Multi-page flows** with route-aware target resolution and resume support
+- **Accessible by default** — keyboard handling, focus management, `aria-live`
+- **Zero runtime dependencies**
+- **AI optional** — bring your own model/provider, never required
 
 ## Why not Shepherd.js / Intro.js / driver.js?
 
@@ -16,9 +41,8 @@ they don't cover:
    DOM clicks and generates valid `Step` JSON directly from your app — no manually
    writing selectors for every step.
 2. **Steps survive minor UI changes.** Each step carries a ranked fallback chain
-   (`testId` → `ariaLabel` → `text` → `cssPath` → fuzzy text as a deterministic last
-   resort) instead of a single brittle selector, so a small refactor doesn't silently
-   break your onboarding flow.
+   instead of a single brittle selector, so a small refactor doesn't silently break
+   your onboarding flow.
 3. **Zero dependencies, zero required AI or network calls.** The core player and
    capture tool work 100% offline. AI is a separate, fully optional add-on you opt into
    per step — never a requirement to use the library.
@@ -39,27 +63,73 @@ This package ships a default stylesheet separately — you must import
 > you. Fix it by adding `declare module "*.css";` to your own `vite-env.d.ts` (or
 > equivalent ambient `.d.ts` file already included by your `tsconfig.json`).
 
-## Quickstart: play a flow
+## Package entry points
+
+| Import | Purpose | Dependencies |
+|---|---|---|
+| `walkthrough-lib` | Core player, types, recorder | None |
+| `walkthrough-lib/react` | `useTour` hook | React (peer, optional) |
+| `walkthrough-lib/ai-copy` | Optional AI-assisted copy suggestions | None |
+| `walkthrough-lib/style.css` | Default UI styling | None |
+
+## Quickstart: write a flow by hand
+
+You don't need the recorder to use this — a flow is just plain JSON, so you can write
+one directly if you already know what you want to guide the user through:
 
 ```ts
 import { TourPlayer } from "walkthrough-lib";
-import "walkthrough-lib/style.css"; // Required for default spotlight/tooltip styling
+import "walkthrough-lib/style.css";
 
 const flow = {
-  id: "welcome", title: "Welcome tour", version: 1,
-  steps: [{ id: "step-1", selectors: { text: "Create Project" }, text: "Click here to get started." }],
+  id: "welcome",
+  title: "Welcome tour",
+  version: 1,
+  steps: [
+    { id: "step-1", selectors: { text: "Create Project" }, text: "Click here to get started." },
+  ],
 };
 
 new TourPlayer().start(flow);
 ```
 
-Full callback/method reference in [docs/guides/player.md](docs/guides/player.md).
+Full `Flow`/`Step` field reference in [docs/SPEC.md](docs/SPEC.md).
+
+## Capture → Play
+
+If you'd rather not hand-write every step, a captured flow is directly playable — `TourRecorder.exportFlow()` produces the same
+`Flow` structure `TourPlayer.start()` consumes. No conversion step, no intermediate
+format.
+
+**1. Capture**
+```ts
+import { TourRecorder } from "walkthrough-lib";
+
+const recorder = new TourRecorder();
+recorder.start();
+
+// ...user clicks through the app...
+
+const flow = recorder.exportFlow("onboarding", "Onboarding Tour");
+recorder.stop();
+```
+
+**2. Play**
+```ts
+import { TourPlayer } from "walkthrough-lib";
+import "walkthrough-lib/style.css";
+
+new TourPlayer().start(flow);
+```
+
+Full workflow, including the `allowedHosts` safety warning for accidental production
+use, in [docs/guides/capture.md](docs/guides/capture.md).
 
 ## Quickstart: React
 
 ```tsx
 import { useTour } from "walkthrough-lib/react";
-import "walkthrough-lib/style.css"; // Required for default spotlight/tooltip styling
+import "walkthrough-lib/style.css";
 
 function App() {
   const { start, isActive, currentStepId } = useTour();
@@ -76,26 +146,18 @@ by hand.
 pulls in React, and `react` is only a peer dependency, not a hard one. Full API and a
 complete component in [docs/guides/react.md](docs/guides/react.md).
 
-## Quickstart: capturing a flow instead of hand-writing it
+## Selector fallback
 
-`TourRecorder` listens for real clicks and builds `Step` JSON for you — each step gets
-all four fallback selectors (`testId`, `ariaLabel`, `text`, `cssPath`) where available.
-While recording, a small floating panel shows a step count and a "Finish & Export"
-button that copies the resulting flow JSON to your clipboard.
+Each step can carry multiple ways to locate its target:
 
-```ts
-import { TourRecorder } from "walkthrough-lib";
-
-const recorder = new TourRecorder();
-recorder.start(); // warns via console if not on localhost/127.0.0.1 or an allowedHosts entry
-// ...user clicks through the app...
-const flow = recorder.exportFlow("onboarding", "Onboarding Tour");
-recorder.stop();
+```text
+testId → ariaLabel → text → cssPath → fuzzy text → unresolved
 ```
 
-Pass `{ allowedHosts: ["staging.myapp.com"] }` to `start()` to silence that warning on
-a legitimate non-local domain. Full workflow in
-[docs/guides/capture.md](docs/guides/capture.md).
+The player stops at the first strategy that resolves to exactly one element. Fuzzy
+text is a deterministic last resort only: ties or low-similarity matches are treated
+as unresolved rather than guessed. Full chain details and `getMatchLog()` usage in
+[docs/guides/resilience.md](docs/guides/resilience.md).
 
 ## Quickstart: AI-assisted copy (optional)
 
@@ -111,9 +173,10 @@ step.title = suggestion.title;
 step.text = suggestion.text;
 ```
 
-`generate` is entirely your own function — point it at Anthropic, OpenAI, a local
-model, or a mock for testing; `walkthrough-lib` never makes the network call itself and
-never requires an API key anywhere else in the library. Full signature and provider
+The library does not choose or call an AI provider for you. You supply `generate`, so
+it can call Anthropic, OpenAI, a local model, another provider, or a mock for testing.
+This is completely optional and is never required by the core player or recorder — no
+API key, no network call, anywhere else in the library. Full signature and provider
 examples in [docs/guides/ai-copy.md](docs/guides/ai-copy.md).
 
 ## Features
@@ -124,8 +187,19 @@ examples in [docs/guides/ai-copy.md](docs/guides/ai-copy.md).
   minor UI changes don't silently break a flow. [Guide](docs/guides/resilience.md)
 - **Accessibility** — keyboard (Escape, focus trap), `aria-live` announcements, and
   proper ARIA roles, built in by default. [Guide](docs/guides/accessibility.md)
-- **Completion/abandonment tracking** — `onStepChange`/`onFlowAbandoned` callbacks so a
-  host app can track how far users get. [Guide](docs/guides/player.md)
+- **Lifecycle tracking** — `onFlowComplete`, `onFlowAbandoned`, `onStepUnresolved`, and
+  `onStepChange` callbacks so a host app can track how far users get.
+  [Guide](docs/guides/player.md)
+
+## What it doesn't do
+
+- No visual/screenshot-based element matching
+- No ML-based DOM guessing
+- No required backend or hosted service
+- No required API key
+- No video/screenshot recording
+
+Target resolution is deterministic and DOM-based, always.
 
 ## Flow & Step schema
 

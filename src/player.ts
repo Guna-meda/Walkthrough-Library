@@ -8,6 +8,12 @@ export interface FlowAbandonedInfo {
   stepIndex: number;
 }
 
+/** Identifies which flow completed naturally — deliberately just the field needed for
+ * a host app to log/report it, not the full Step (no selector/PII data). */
+export interface FlowCompleteInfo {
+  flowId: string;
+}
+
 export interface TourPlayerOptions {
   onStepUnresolved?: (step: Step) => void;
   /** Fires with the newly-active step whenever one renders, and with null when the
@@ -20,6 +26,11 @@ export interface TourPlayerOptions {
    * resumable state for a flow turns out to have expired. Never fires just because the
    * page unloaded mid-tour — see docs/SPEC.md for the full semantics. */
   onFlowAbandoned?: (info: FlowAbandonedInfo) => void;
+  /** Fires when a flow completes naturally — advance() runs past the last step without
+   * .stop() having been called first. Mutually exclusive with onFlowAbandoned: exactly
+   * one of the two fires (if either fires at all) when a tour with an active step ends,
+   * depending on whether it finished or was stopped/skipped early. */
+  onFlowComplete?: (info: FlowCompleteInfo) => void;
   /** Interval, in ms, between resolution attempts for a step whose `route` differs
    * from the previous step's (see docs/SPEC.md). Default 150. */
   pollIntervalMs?: number;
@@ -88,6 +99,7 @@ export class TourPlayer {
   private matchLog: MatchLogEntry[] = [];
   private onStepChange: ((step: Step | null) => void) | undefined;
   private onFlowAbandoned: ((info: FlowAbandonedInfo) => void) | undefined;
+  private onFlowComplete: ((info: FlowCompleteInfo) => void) | undefined;
 
   private ariaLiveEl: HTMLDivElement | null = null;
   private focusBeforeTooltip: HTMLElement | null = null;
@@ -104,6 +116,7 @@ export class TourPlayer {
     this.onStepUnresolved = options.onStepUnresolved;
     this.onStepChange = options.onStepChange;
     this.onFlowAbandoned = options.onFlowAbandoned;
+    this.onFlowComplete = options.onFlowComplete;
     this.pollIntervalMs = options.pollIntervalMs ?? 150;
     this.pollTimeoutMs = options.pollTimeoutMs ?? 5000;
     this.currentIndex = -1;
@@ -145,12 +158,18 @@ export class TourPlayer {
     this.onStepUnresolved = undefined;
     const onStepChange = this.onStepChange;
     const onFlowAbandoned = this.onFlowAbandoned;
+    const onFlowComplete = this.onFlowComplete;
     this.onStepChange = undefined;
     this.onFlowAbandoned = undefined;
+    this.onFlowComplete = undefined;
     if (wasActive) {
       onStepChange?.(null);
-      if (!completed && abandonedFlow) {
-        onFlowAbandoned?.({ flowId: abandonedFlow.id, stepIndex: abandonedStepIndex });
+      if (abandonedFlow) {
+        if (completed) {
+          onFlowComplete?.({ flowId: abandonedFlow.id });
+        } else {
+          onFlowAbandoned?.({ flowId: abandonedFlow.id, stepIndex: abandonedStepIndex });
+        }
       }
     }
   }

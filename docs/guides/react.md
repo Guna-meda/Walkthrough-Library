@@ -20,7 +20,14 @@ interface UseTourResult {
   stop: () => void;
   currentStepId: string | null;
   isActive: boolean;
+  matchLog: MatchLogEntry[];
+  lastEvent: TourEvent | null;
 }
+
+type TourEvent =
+  | { type: "complete"; info: FlowCompleteInfo }
+  | { type: "abandoned"; info: FlowAbandonedInfo }
+  | { type: "unresolved"; step: Step };
 ```
 
 | value | behavior |
@@ -30,12 +37,51 @@ interface UseTourResult {
 | `stop()` | Stops the tour, same as `TourPlayer.stop()`. |
 | `currentStepId` | The `id` of the currently-active `Step`, or `null` when no tour is active. Mirrors the player's `onStepChange` callback into React state. |
 | `isActive` | Shorthand for `currentStepId !== null`. |
+| `matchLog` | Which selector strategy resolved each step played so far, in play order. Mirrors `TourPlayer.getMatchLog()`, refreshed on every `onStepChange`. |
+| `lastEvent` | The most recent `onFlowComplete` / `onFlowAbandoned` / `onStepUnresolved` callback from the player, as a single discriminated union — `null` until one of those three has fired at least once. Lets a component read one piece of state instead of wiring up its own callbacks for all three. |
+
+## Reading `matchLog` and `lastEvent`
+
+```tsx
+import { useTour } from "walkthrough-lib/react";
+
+function TourDebugPanel() {
+  const { matchLog, lastEvent } = useTour();
+
+  return (
+    <div>
+      <h4>Match log</h4>
+      <ul>
+        {matchLog.map((entry, i) => (
+          <li key={i}>
+            {entry.stepId} resolved via {entry.strategy}
+          </li>
+        ))}
+      </ul>
+
+      {lastEvent?.type === "complete" && <p>Flow "{lastEvent.info.flowId}" completed.</p>}
+      {lastEvent?.type === "abandoned" && (
+        <p>
+          Flow "{lastEvent.info.flowId}" abandoned at step {lastEvent.info.stepIndex}.
+        </p>
+      )}
+      {lastEvent?.type === "unresolved" && <p>Step "{lastEvent.step.id}" could not be resolved.</p>}
+    </div>
+  );
+}
+```
+
+`matchLog` is handy for spotting a flow that's "degrading" — falling back to `cssPath`/
+`fuzzyText` more often than exact matches (see [resilience.md](resilience.md)).
+`lastEvent.type` lets you branch on completion vs. abandonment vs. an unresolved step
+without deciding in advance which of the three you care about.
 
 ## Full working example
 
 ```tsx
 import type { Flow } from "walkthrough-lib";
 import { useTour } from "walkthrough-lib/react";
+import "walkthrough-lib/style.css"; // Required for default spotlight/tooltip styling
 
 const flow: Flow = {
   id: "onboarding-demo",
@@ -76,14 +122,14 @@ library with `npm run build` in the repo root).
 
 ## What the hook does *not* expose
 
-`useTour()` wraps only `start`/`next`/`stop`/`currentStepId`/`isActive`. It does not
-currently expose:
+`useTour()` wraps `start`/`next`/`stop`/`currentStepId`/`isActive`/`matchLog`/
+`lastEvent`. `lastEvent` covers `onFlowComplete`/`onFlowAbandoned`/`onStepUnresolved`
+and `matchLog` covers `getMatchLog()`, but the hook still does not expose:
 
-- `onStepUnresolved`, or `onFlowAbandoned` — pass these directly if you use
-  `TourPlayer` yourself instead of the hook (see [player.md](player.md)).
-- `getMatchLog()`, `getResumableState()`, or `notifyNavigation()` — the
-  multi-page/resilience APIs described in [multipage.md](multipage.md) and
-  [resilience.md](resilience.md).
+- `getResumableState()` or `notifyNavigation()` — the multi-page/resilience APIs
+  described in [multipage.md](multipage.md) and [resilience.md](resilience.md).
+- `pollIntervalMs`/`pollTimeoutMs`/`resumeFromStep` options on `start()` — only the
+  `flow` argument is currently accepted.
 
 If you need any of those, use `TourPlayer` directly rather than `useTour()` for now.
 
@@ -105,11 +151,11 @@ trigger a spurious `onFlowAbandoned` or any visible effect.
 `useTour()` registers a `useEffect` cleanup (empty dependency array) that calls
 `playerRef.current?.stop()` when the component unmounts — so navigating away from a
 component using `useTour()` while a tour is active tears down the spotlight/tooltip UI
-immediately, rather than leaking a tour that outlives its component. Note that since
-the hook doesn't wire up `onFlowAbandoned` (see above), this `.stop()` call doesn't
-surface an abandonment notification anywhere — it's silent teardown only. If you need
-to know when an unmount-triggered stop counts as abandonment, use `TourPlayer` directly
-and pass `onFlowAbandoned` yourself (see
+immediately, rather than leaking a tour that outlives its component. Since the hook now
+wires up `onFlowAbandoned` internally, this `.stop()` call does update `lastEvent` to
+an `{ type: "abandoned" }` event — but the component is already unmounting, so there's
+no render left to read it from. If you need to observe an unmount-triggered abandonment
+(e.g. to log it), use `TourPlayer` directly and pass `onFlowAbandoned` yourself (see
 [player.md](player.md#onflowabandoned-semantics)).
 
 ---

@@ -1,7 +1,7 @@
 # walkthrough-lib
 
-A framework-agnostic library for guided in-app product walkthroughs — flows are
-captured from real clicks instead of hand-written, no video, no AI required, and
+A framework-agnostic library for guided in-app product walkthroughs ,flows are
+captured from real clicks instead of hand-written, and
 steps survive minor UI changes via fallback selectors.
 
 It shows a spotlight + tooltip on a real DOM element and waits for the *actual user*
@@ -29,11 +29,21 @@ they don't cover:
 npm install walkthrough-lib
 ```
 
+This package ships a default stylesheet separately — you must import
+`walkthrough-lib/style.css` yourself for the default look. Skipping this import is safe
+(the player still functions) but renders unstyled: no overlay, no spotlight, no tooltip.
+
+> **TypeScript note:** if that import reports "Cannot find module" in your editor or
+> build, that's a missing CSS ambient-module type in *your* project, not a bug in this
+> package — most bundler starter templates (Vite, CRA, etc.) already declare one for
+> you. Fix it by adding `declare module "*.css";` to your own `vite-env.d.ts` (or
+> equivalent ambient `.d.ts` file already included by your `tsconfig.json`).
+
 ## Quickstart: play a flow
 
 ```ts
 import { TourPlayer } from "walkthrough-lib";
-import "walkthrough-lib/style.css";
+import "walkthrough-lib/style.css"; // Required for default spotlight/tooltip styling
 
 const flow = {
   id: "welcome", title: "Welcome tour", version: 1,
@@ -49,12 +59,18 @@ Full callback/method reference in [docs/guides/player.md](docs/guides/player.md)
 
 ```tsx
 import { useTour } from "walkthrough-lib/react";
+import "walkthrough-lib/style.css"; // Required for default spotlight/tooltip styling
 
 function App() {
   const { start, isActive, currentStepId } = useTour();
   return <button onClick={() => start(flow)}>Start Tour</button>;
 }
 ```
+
+`useTour()` also returns `matchLog` (which selector strategy resolved each step) and
+`lastEvent` (the most recent completion/abandonment/unresolved-step event), for
+building a debug view or tracking analytics without wiring up `TourPlayer` callbacks
+by hand.
 
 `walkthrough-lib/react` is a separate entry point — importing the core package never
 pulls in React, and `react` is only a peer dependency, not a hard one. Full API and a

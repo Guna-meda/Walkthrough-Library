@@ -6,6 +6,7 @@ advancing. Zero dependencies, no AI, no network calls.
 
 ```ts
 import { TourPlayer } from "walkthrough-lib";
+import "walkthrough-lib/style.css"; // Required for default spotlight/tooltip styling
 
 const player = new TourPlayer();
 player.start(flow);
